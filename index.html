@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Zombie Survival</title>
+<style>
+body { margin:0; overflow:hidden; background:#111; }
+canvas { background:#222; display:block; margin:auto; }
+</style>
+</head>
+<body>
+
+<canvas id="game" width="800" height="800"></canvas>
+
+<script>
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+const keys = {};
+document.addEventListener("keydown", e => {
+    keys[e.key.toLowerCase()] = true;
+
+    if(e.key.toLowerCase() === "r") {
+        resetGame();
+    }
+});
+document.addEventListener("keyup", e => {
+    keys[e.key.toLowerCase()] = false;
+});
+
+let player, bullets, zombies, roboDog, kills, gameOver;
+let roboDogCooldown = 0;
+let roboDogAttackDelay = 0;
+let roboDogKillCount = 0;
+
+function resetGame(){
+    player = {
+        x:400,
+        y:400,
+        size:20,
+        speed:4,
+        dirX:0,
+        dirY:-1 // default facing up
+    };
+
+    roboDog = {x:100,y:100,size:15,speed:2};
+
+    bullets = [];
+    zombies = [];
+    kills = 0;
+    gameOver = false;
+    roboDogCooldown = 0;
+    roboDogAttackDelay = 0;
+    roboDogKillCount = 0;
+}
+resetGame();
+
+function spawnZombie(){
+    let edge = Math.floor(Math.random()*4);
+    let x,y;
+    if(edge===0){x=0;y=Math.random()*800;}
+    if(edge===1){x=800;y=Math.random()*800;}
+    if(edge===2){x=Math.random()*800;y=0;}
+    if(edge===3){x=Math.random()*800;y=800;}
+    zombies.push({x,y,size:20,speed:1.5});
+}
+
+setInterval(()=> {
+    if(!gameOver && zombies.length < 10)
+        spawnZombie();
+},1000);
+
+function update(){
+    if(gameOver) return;
+
+    // MOVEMENT (WASD)
+    if(keys["w"]) player.y -= player.speed;
+    if(keys["s"]) player.y += player.speed;
+    if(keys["a"]) player.x -= player.speed;
+    if(keys["d"]) player.x += player.speed;
+
+    player.x = Math.max(0, Math.min(800, player.x));
+    player.y = Math.max(0, Math.min(800, player.y));
+
+    // AIMING (ARROW KEYS)
+    if(keys["arrowup"]) { player.dirX = 0; player.dirY = -1; }
+    if(keys["arrowdown"]) { player.dirX = 0; player.dirY = 1; }
+    if(keys["arrowleft"]) { player.dirX = -1; player.dirY = 0; }
+    if(keys["arrowright"]) { player.dirX = 1; player.dirY = 0; }
+
+    // SHOOT
+    if(keys[" "]){
+        bullets.push({
+            x:player.x,
+            y:player.y,
+            dx:player.dirX * 6,
+            dy:player.dirY * 6
+        });
+        keys[" "] = false;
+    }
+
+    bullets.forEach(b=>{
+        b.x += b.dx;
+        b.y += b.dy;
+    });
+
+    bullets = bullets.filter(b =>
+        b.x > 0 && b.x < 800 && b.y > 0 && b.y < 800
+    );
+
+    // ZOMBIES CHASE PLAYER
+    zombies.forEach(z=>{
+        let dx = player.x - z.x;
+        let dy = player.y - z.y;
+        let dist = Math.hypot(dx,dy);
+        z.x += (dx/dist)*z.speed;
+        z.y += (dy/dist)*z.speed;
+
+        if(dist < 20){
+            gameOver = true;
+        }
+    });
+
+    // BULLET COLLISION
+    bullets.forEach((b,bi)=>{
+        zombies.forEach((z,zi)=>{
+            if(Math.hypot(b.x-z.x,b.y-z.y) < 20){
+                zombies.splice(zi,1);
+                bullets.splice(bi,1);
+                kills++;
+            }
+        });
+    });
+
+    // 🐶 ROBOT DOG AI
+    if(roboDogCooldown <= 0 && roboDogAttackDelay <= 0 && zombies.length > 0){
+
+        // find closest zombie
+        let closest = zombies.reduce((a,b)=>{
+            let da = Math.hypot(a.x-roboDog.x,a.y-roboDog.y);
+            let db = Math.hypot(b.x-roboDog.x,b.y-roboDog.y);
+            return da < db ? a : b;
+        });
+
+        let dx = closest.x - roboDog.x;
+        let dy = closest.y - roboDog.y;
+        let dist = Math.hypot(dx,dy);
+
+        if(dist > 5){
+            roboDog.x += (dx/dist)*roboDog.speed;
+            roboDog.y += (dy/dist)*roboDog.speed;
+        } else {
+            // kill zombie
+            zombies.splice(zombies.indexOf(closest),1);
+            kills++;
+            roboDogKillCount++;
+            roboDogAttackDelay = 0.5 * 60; // 0.5 sec
+
+            // EVERY 5 KILLS → 10 SEC COOLDOWN
+            if(roboDogKillCount % 5 === 0){
+                roboDogCooldown = 10 * 60;
+            }
+        }
+    }
+
+    if(roboDogCooldown > 0) roboDogCooldown--;
+    if(roboDogAttackDelay > 0) roboDogAttackDelay--;
+
+    if(kills >= 30){
+        gameOver = true;
+    }
+}
+
+function draw(){
+    ctx.clearRect(0,0,800,800);
+
+    // Player
+    ctx.fillStyle="cyan";
+    ctx.fillRect(player.x-10,player.y-10,20,20);
+
+    // Direction indicator
+    ctx.fillStyle="white";
+    ctx.fillRect(
+        player.x + player.dirX*15 - 3,
+        player.y + player.dirY*15 - 3,
+        6,6
+    );
+
+    // Bullets
+    ctx.fillStyle="yellow";
+    bullets.forEach(b=>{
+        ctx.fillRect(b.x-3,b.y-3,6,6);
+    });
+
+    // Zombies
+    ctx.fillStyle="lime";
+    zombies.forEach(z=>{
+        ctx.fillRect(z.x-10,z.y-10,20,20);
+    });
+
+    // Robot Dog
+    ctx.fillStyle="orange";
+    ctx.fillRect(roboDog.x-8,roboDog.y-8,15,15);
+
+    // UI
+    ctx.fillStyle="white";
+    ctx.font="20px Arial";
+    ctx.fillText("Kills: "+kills+"/30",20,30);
+    ctx.fillText("Dog Cooldown: "+Math.ceil(roboDogCooldown/60),20,60);
+
+    if(gameOver){
+        ctx.font="40px Arial";
+        ctx.fillText(kills>=30 ? "YOU WIN!" : "GAME OVER",300,400);
+        ctx.font="20px Arial";
+        ctx.fillText("Press R to Restart",320,440);
+    }
+}
+
+function gameLoop(){
+    update();
+    draw();
+    requestAnimationFrame(gameLoop);
+}
+
+gameLoop();
+</script>
+</body>
+</html>
